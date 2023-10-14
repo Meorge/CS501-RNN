@@ -47,20 +47,21 @@ class NeighborClassificationNetwork(nn.Module):
 
 
 def train(
+    n_epochs: int,
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
     criterion: nn.modules.loss._Loss,
     inputs: torch.Tensor,
     expected_output: torch.Tensor,
 ):
-    for epoch in range(100):
+    for epoch in range(n_epochs):
         optimizer.zero_grad()
         output, hidden = model(inputs)
         loss = criterion(output, expected_output)
         loss.backward()
         optimizer.step()
 
-        print(f"Loss at epoch {epoch}: {loss.item()}")
+        print(f"Loss at epoch {epoch + 1}: {loss.item()}")
 
 
 def main():
@@ -78,12 +79,13 @@ def main():
         inputs = torch.tensor(raw_data["inputs"])
         expected_output = torch.tensor([raw_data["output"]])
 
+    n_epochs = 100
     n_hidden = 128
     learning_rate = 0.005
     model = NeighborClassificationNetwork(hidden_size=n_hidden, num_layers=1)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     criterion = nn.CrossEntropyLoss()
-    train(model, optimizer, criterion, inputs, expected_output)
+    train(n_epochs, model, optimizer, criterion, inputs, expected_output)
 
 
 if __name__ == "__main__":
