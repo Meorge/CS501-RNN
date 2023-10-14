@@ -1,20 +1,18 @@
 import torch.nn as nn
 import torch
+from os.path import join
+from json import load
 
-# Some data I generated.
-# First item in tuple is inputs - item[0] is reported value, item[1] is presence of PU
-# Second item is probability that neighbor is malicious
-test_data = [
-    ((80.0, 0), 0.4),
-    ((80.0, 0), 0.4),
-    ((-111.0, 0), 0.4),
-    ((-111.0, 0), 0.4),
-    ((80.0, 0), 0.4),
-    ((-111.0, 0), 0.4),
-    ((-111.0, 0), 0.4),
-    ((80.0, 0), 0.4),
-]
+"""
+Documentation on nn.RNN module:
+    https://pytorch.org/docs/stable/generated/torch.nn.RNN.html
+    
+"From scratch" tutorial on RNNs in PyTorch:
+    https://pytorch.org/tutorials/intermediate/char_rnn_classification_tutorial.html
 
+Tutorial on RNNs that's a bit more practical:
+    https://blog.floydhub.com/a-beginners-guide-on-recurrent-neural-networks-with-pytorch/
+"""
 
 
 class NeighborClassificationNetwork(nn.Module):
@@ -27,6 +25,10 @@ class NeighborClassificationNetwork(nn.Module):
         self.hidden_size = hidden_size
         self.num_layers = num_layers
 
+        # Input should be (L, H_in) for unbatched input
+        # L = sequence length
+        # H_in = input_size (2)
+        # So input should be of shape (sequence_length, 2)
         self.rnn = nn.RNN(
             input_size=self.input_size,
             hidden_size=self.hidden_size,
@@ -37,62 +39,52 @@ class NeighborClassificationNetwork(nn.Module):
         # the neighbor as either non-malicious (0) or malicious (1)
         self.linear = nn.Linear(in_features=self.hidden_size, out_features=1)
 
-    def forward(self, input, hidden):
+    def forward(self, input):
+        hidden = torch.zeros(1, self.hidden_size)
         output, hidden = self.rnn(input, hidden)
-        prediction = self.linear(hidden)
-        return prediction
+        prediction = self.linear(output)[-1]
+        return prediction, hidden
 
 
-n_hidden = 128
-learning_rate = 0.005
-classifier = NeighborClassificationNetwork(hidden_size=n_hidden, num_layers=1)
+def train(
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    criterion: nn.modules.loss._Loss,
+    inputs: torch.Tensor,
+    expected_output: torch.Tensor,
+):
+    for epoch in range(100):
+        optimizer.zero_grad()
+        output, hidden = model(inputs)
+        loss = criterion(output, expected_output)
+        loss.backward()
+        optimizer.step()
 
-criterion = nn.CrossEntropyLoss()
-"""
-INPUT: (float, float)
-  - First number is the value that the neighbor reported
-  - Second number is the ground truth of whether the PU
-    is there (1 for yes, 2 for no)
-OUTPUT: float
-  - Probability that the neighbor is malicious
-"""
-data_point = torch.tensor([list(i) for i, _ in test_data])
-true_classification = torch.tensor([[test_data[0][1]]])
+        print(f"Loss at epoch {epoch}: {loss.item()}")
 
-
-def train():
-    hidden = torch.zeros(1, n_hidden)
-
-    classifier.zero_grad()
-
-    # documentation on RNN module: https://pytorch.org/docs/stable/generated/torch.nn.RNN.html
-    # tutorial on RNNs: https://pytorch.org/tutorials/intermediate/char_rnn_classification_tutorial.html
-
-    # Input should be (L, H_in) for unbatched input
-    # L = sequence length
-    # H_in = input_size (2)
-    # So input should be of shape (sequence_length, 2)
-    output = classifier(data_point, hidden)
-
-    loss = criterion(output, true_classification)
-    loss.backward()
-
-    for p in classifier.parameters():
-        p.data.add_(p.grad.data, alpha=-learning_rate)
-
-    return output, loss.item()
 
 def main():
-    current_loss = 0.0
-    n_iters = 100
-    for i in range(n_iters):
-        output, loss = train()
-        current_loss += loss
-        print(output)
+    # Some data I generated.
+    """
+    INPUT: (float, float)
+    - First number is the value that the neighbor reported
+    - Second number is the ground truth of whether the PU
+        is there (1 for yes, 2 for no)
+    OUTPUT: float
+    - Probability that the neighbor is malicious
+    """
+    with open(join("training_data", "train-1.0.json")) as f:
+        raw_data = load(f)
+        inputs = torch.tensor(raw_data["inputs"])
+        expected_output = torch.tensor([raw_data["output"]])
 
-    print(f"Loss after {n_iters} iterations: {current_loss}")
+    n_hidden = 128
+    learning_rate = 0.005
+    model = NeighborClassificationNetwork(hidden_size=n_hidden, num_layers=1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    criterion = nn.CrossEntropyLoss()
+    train(model, optimizer, criterion, inputs, expected_output)
 
-    
-main()
 
-
+if __name__ == "__main__":
+    main()
