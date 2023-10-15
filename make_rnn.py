@@ -14,6 +14,13 @@ Tutorial on RNNs that's a bit more practical:
     https://blog.floydhub.com/a-beginners-guide-on-recurrent-neural-networks-with-pytorch/
 """
 
+# do the device stuff
+if torch.cuda.is_available():
+    device = torch.device('cuda')
+    print("CUDA used for device")
+else:
+    device = torch.device('cpu')
+    print("CUDA not available; CPU used for device")
 
 class NeighborClassificationNetwork(nn.Module):
     def __init__(self, hidden_size: int, num_layers: int = 1):
@@ -56,6 +63,7 @@ def train(
 ):
     for epoch in range(n_epochs):
         optimizer.zero_grad()
+        inputs.to(device)
         output, hidden = model(inputs)
         loss = criterion(output, expected_output)
         loss.backward()
@@ -82,9 +90,9 @@ def main():
     n_epochs = 100
     n_hidden = 128
     learning_rate = 0.005
-    model = NeighborClassificationNetwork(hidden_size=n_hidden, num_layers=1)
+    model = NeighborClassificationNetwork(hidden_size=n_hidden, num_layers=1).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss().to(device)
     train(n_epochs, model, optimizer, criterion, inputs, expected_output)
 
 
