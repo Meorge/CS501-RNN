@@ -12,15 +12,17 @@ Documentation on nn.RNN module:
 
 Tutorial on RNNs that's a bit more practical:
     https://blog.floydhub.com/a-beginners-guide-on-recurrent-neural-networks-with-pytorch/
+
+Tutorial code on one-to-many RNN/LSTM:
+    https://github.com/yunjey/pytorch-tutorial/blob/master/tutorials/02-intermediate/recurrent_neural_network/main.py
+
+
+According to this: https://stackoverflow.com/questions/48484985/why-is-the-loss-of-my-recurrent-neural-network-zero?rq=3
+it sounds possible that we need to make our input batched - right now, it's training
+perfectly on the unbatched input (hence a loss of 0) but not generalizing.
 """
 
-# do the device stuff
-if torch.cuda.is_available():
-    device = torch.device('cuda')
-    print("CUDA used for device")
-else:
-    device = torch.device('cpu')
-    print("CUDA not available; CPU used for device")
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class NeighborClassificationNetwork(nn.Module):
     def __init__(self, hidden_size: int, num_layers: int = 1):
@@ -36,21 +38,27 @@ class NeighborClassificationNetwork(nn.Module):
         # L = sequence length
         # H_in = input_size (2)
         # So input should be of shape (sequence_length, 2)
-        self.rnn = nn.RNN(
+        self.lstm = nn.LSTM(
             input_size=self.input_size,
             hidden_size=self.hidden_size,
             num_layers=self.num_layers,
+            batch_first=True
         )
 
         # Output of linear layer is just 1 feature; we want to classify
         # the neighbor as either non-malicious (0) or malicious (1)
-        self.linear = nn.Linear(in_features=self.hidden_size, out_features=1)
+        self.linear = nn.Linear(
+            in_features=self.hidden_size,
+            out_features=1
+        )
 
     def forward(self, input):
-        hidden = torch.zeros(1, self.hidden_size)
-        output, hidden = self.rnn(input, hidden)
+        hidden = torch.zeros(self.num_layers, self.hidden_size).to(device)
+        cells = torch.zeros(self.num_layers, self.hidden_size).to(device)
+
+        output, _ = self.lstm(input, (hidden, cells))
         prediction = self.linear(output)[-1]
-        return prediction, hidden
+        return prediction
 
 
 def train(
@@ -58,14 +66,20 @@ def train(
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
     criterion: nn.modules.loss._Loss,
-    inputs: torch.Tensor,
+    inputs: tuple[torch.Tensor],
     expected_output: torch.Tensor,
 ):
     for epoch in range(n_epochs):
-        optimizer.zero_grad()
-        inputs.to(device)
-        output, hidden = model(inputs)
+        inputs = inputs.to(device)
+        expected_output = expected_output.to(device)
+
+        # Possibility: all of the training data only has one output,
+        # which means that it instantly learns to always output a single,
+        # simple value - thus instant loss of 0.0?
+        output = model(inputs)
         loss = criterion(output, expected_output)
+
+        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
@@ -73,16 +87,15 @@ def train(
 
 
 def main():
-    # Some data I generated.
     """
     INPUT: (float, float)
     - First number is the value that the neighbor reported
     - Second number is the ground truth of whether the PU
-        is there (1 for yes, 2 for no)
+        is there (0 for no, 1 for yes)
     OUTPUT: float
     - Probability that the neighbor is malicious
     """
-    with open(join("training_data", "train-1.0.json")) as f:
+    with open(join("training_data", "train-0.5.json")) as f:
         raw_data = load(f)
         inputs = torch.tensor(raw_data["inputs"])
         expected_output = torch.tensor([raw_data["output"]])
@@ -90,7 +103,7 @@ def main():
     n_epochs = 100
     n_hidden = 128
     learning_rate = 0.005
-    model = NeighborClassificationNetwork(hidden_size=n_hidden, num_layers=1).to(device)
+    model = NeighborClassificationNetwork(hidden_size=n_hidden, num_layers=2).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     criterion = nn.CrossEntropyLoss().to(device)
     train(n_epochs, model, optimizer, criterion, inputs, expected_output)
