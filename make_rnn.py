@@ -18,11 +18,15 @@ Tutorial code on one-to-many RNN/LSTM:
 
 
 According to this: https://stackoverflow.com/questions/48484985/why-is-the-loss-of-my-recurrent-neural-network-zero?rq=3
-it sounds possible that we need to make our input batched - right now, it's training
-perfectly on the unbatched input (hence a loss of 0) but not generalizing.
+    it sounds possible that we need to make our input batched - right now, it's training
+    perfectly on the unbatched input (hence a loss of 0) but not generalizing.
+    UPDATE: This might not be the case. As discussed below, the output of the model doesn't
+    match what's expected. So it doesn't seem to just be learning "output 0.5 no matter what"
+    or something similar.
 """
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 class NeighborClassificationNetwork(nn.Module):
     def __init__(self, hidden_size: int, num_layers: int = 1):
@@ -42,22 +46,19 @@ class NeighborClassificationNetwork(nn.Module):
             input_size=self.input_size,
             hidden_size=self.hidden_size,
             num_layers=self.num_layers,
-            batch_first=True
+            batch_first=True,
         )
 
         # Output of linear layer is just 1 feature; we want to classify
         # the neighbor as either non-malicious (0) or malicious (1)
-        self.linear = nn.Linear(
-            in_features=self.hidden_size,
-            out_features=1
-        )
+        self.linear = nn.Linear(in_features=self.hidden_size, out_features=1)
 
     def forward(self, input):
         hidden = torch.zeros(self.num_layers, self.hidden_size).to(device)
         cells = torch.zeros(self.num_layers, self.hidden_size).to(device)
 
         output, _ = self.lstm(input, (hidden, cells))
-        prediction = self.linear(output)[-1]
+        prediction = self.linear(output[-1, :])
         return prediction
 
 
@@ -70,21 +71,33 @@ def train(
     expected_output: torch.Tensor,
 ):
     for epoch in range(n_epochs):
+        print(f"EPOCH {epoch + 1}")
         model.train()
         inputs = inputs.to(device)
         expected_output = expected_output.to(device)
 
-        # Possibility: all of the training data only has one output,
-        # which means that it instantly learns to always output a single,
-        # simple value - thus instant loss of 0.0?
         output = model(inputs)
+        print(f"Training desired: {expected_output}, predicted: {output}")
+
+        # Note: In the working RNN example, I can see that the expected output
+        #  tensor (from variable `labels`) is an index (like 1, 2, 3, etc).
+        #  However, the prediction appears to be a one-hot vector. For example,
+        #  I think the `labels` value of `1` would map to a prediction value
+        #  of `tensor([0, 1, 0, 0, 0, 0, 0, 0, 0, 0])`. So the output and
+        #  expected output shouldn't be in the same format...?
+        #  
+        #  HAHA! I think I found the issue! The loss function we were using,
+        #  `CrossEntropyLoss`, is best for discrete classes (such as object
+        #  types, in the sample code we were using). But in our case, what we
+        #  wanted was just a probability. Using `L1Loss` seems to have fixed
+        #  the issue!
         loss = criterion(output, expected_output)
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        print(f"Loss at epoch {epoch + 1}: {loss.item()}")
+        print(f"Loss: {loss.item()}")
 
         model.eval()
         with torch.no_grad():
@@ -97,9 +110,9 @@ def train(
             I just did). So the issue must be elsewhere...?
             """
             output = model(inputs)
-            print(f"Output from model: {output}")
+            # print(f"Testing desired: {expected_output[0]}, predicted: {output[0]}")
 
-        
+        print()  # add a line between epochs
 
 
 def main():
@@ -111,7 +124,7 @@ def main():
     OUTPUT: float
     - Probability that the neighbor is malicious
     """
-    with open(join("training_data", "train-0.5.json")) as f:
+    with open(join("train-0.5.json")) as f:
         raw_data = load(f)
         inputs = torch.tensor(raw_data["inputs"])
         expected_output = torch.tensor([raw_data["output"]])
@@ -121,7 +134,7 @@ def main():
     learning_rate = 0.005
     model = NeighborClassificationNetwork(hidden_size=n_hidden, num_layers=2).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    criterion = nn.CrossEntropyLoss().to(device)
+    criterion = nn.MSELoss().to(device)
     train(n_epochs, model, optimizer, criterion, inputs, expected_output)
 
 
