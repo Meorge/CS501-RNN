@@ -70,6 +70,7 @@ def train(
     expected_output: torch.Tensor,
 ):
     for epoch in range(n_epochs):
+        model.train()
         inputs = inputs.to(device)
         expected_output = expected_output.to(device)
 
@@ -84,6 +85,21 @@ def train(
         optimizer.step()
 
         print(f"Loss at epoch {epoch + 1}: {loss.item()}")
+
+        model.eval()
+        with torch.no_grad():
+            """
+            Try testing the model to see what its output is, given the
+            inputs. If this was an overfitting issue, I'd expect it to give
+            the perfect output value.
+
+            HOWEVER, it's not (output should be 0.5 and it's -0.0339 in a trial
+            I just did). So the issue must be elsewhere...?
+            """
+            output = model(inputs)
+            print(f"Output from model: {output}")
+
+        
 
 
 def main():
