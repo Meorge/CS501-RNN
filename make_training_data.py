@@ -11,6 +11,7 @@ data_format = [{"pu_measurements": [0, 0, 0, 0, 0], "pu_present": True}]
 
 from cogsim import Simulator, BaseUser
 from cogsim.spatial import User2D
+from networkx import all_neighbors
 import numpy as np
 
 # rich's print function displays data structures a lot nicer, so if we can
@@ -45,6 +46,7 @@ NORMAL_RNG_SIGMA: float = 3.0
 PATH_LOSS_EXPONENT: float = 1.0
 
 rng = np.random.default_rng()
+
 
 class PrimaryUser(User2D):
     def __init__(
@@ -115,21 +117,87 @@ class SecondaryUser(User2D):
             else:
                 self.reported_value = NOISE_FLOOR
 
+    """
+    Runs a simulation.
 
-def simulate(**kwargs):
-    time_steps = kwargs.get("time_steps", 10)
-    time_in_range = kwargs.get("time_in_range", (100, 200))
-    time_out_range = kwargs.get("time_out_range", (50, 100))
+    Arguments:
+    :param time_steps: An integer number of time steps to run the simulation
+    for.
+
+    :param time_in_range: A 2-tuple containing the minimum and maximum number
+      of time steps that the primary user will transmit for at a time.
+
+    :param time_out_range: A 2-tuple containing the minimum and maximum number
+      of time steps taht the primary user will not transmit for at a time.
+
+    :param num_users: An integer number of secondary users, including the "self"
+      user, who will be listening for the primary user in the simulation.
+
+    :param space_size: A 2-tuple containing the width and height (in that order)
+      of the space that the primary user and secondary users may occupy, in
+      kilometers.
+    """
+
+
+def simulate(
+    time_steps: int = 10,
+    time_in_range: tuple[int, int] = (100, 200),
+    time_out_range: tuple[int, int] = (50, 100),
+    num_good_neighbors: int = 30,
+    num_mal_neighbors: int = 5,
+    dimensions: tuple[int, int] = (1000, 1000),
+):
+    """Runs and returns the results from a simulation of neighbors attempting
+    to detect the primary user's absence or presence.
+
+    :param time_steps: The number of discrete time steps that the simulation \
+        will be run for, defaults to 10
+    :type time_steps: int, optional
+    :param time_in_range: The minimum and maximum number of time steps that \
+        the primary user will stay in the transmitting state for, \
+        defaults to (100, 200)
+    :type time_in_range: tuple[int, int], optional
+    :param time_out_range: The minimum and maximum number of time steps that \
+        the primary user will stay in the waiting state for, \
+        defaults to (50, 100)
+    :type time_out_range: tuple[int, int], optional
+    :param num_good_neighbors: The number of good neighbors that the "self" \
+        secondary user will have, defaults to 30
+    :type num_good_neighbors: int, optional
+    :param num_mal_neighbors: The number of malicious neighbors that the \
+        "self" secondary user will have, defaults to 5
+    :type num_mal_neighbors: int, optional
+    :param dimensions: The width and height, in kilometers, of the area \
+        that the the users in the network will be placed at random locations \
+        within, defaults to (1000, 1000)
+    :type dimensions: tuple[int, int], optional
+    :return: The measurements from each neighbor, as well as the ground-truth \
+        presence of the primary user, at each discrete time step.
+    :rtype: list[dict]
+    """
+    rand_x = lambda: rng.uniform(high=dimensions[0])
+    rand_y = lambda: rng.uniform(high=dimensions[1])
 
     primary_user = PrimaryUser(
-        x=0, y=0, time_in_range=time_in_range, time_out_range=time_out_range
+        x=rand_x(),
+        y=rand_y(),
+        time_in_range=time_in_range,
+        time_out_range=time_out_range,
     )
 
-    self_su = SecondaryUser(x=0, y=0, attack_probability=0.0)
+    self_su = SecondaryUser(x=rand_x(), y=rand_y(), attack_probability=0.0)
 
-    other_su: list[SecondaryUser] = []
+    good_neighbors = [
+        SecondaryUser(x=rand_x(), y=rand_y(), attack_probability=0.0)
+        for _ in range(num_good_neighbors)
+    ]
+    mal_neighbors = [
+        SecondaryUser(x=rand_x(), y=rand_y(), attack_probability=1.0)
+        for _ in range(num_mal_neighbors)
+    ]
+    all_neighbors = good_neighbors + mal_neighbors
 
-    all_users = [primary_user, self_su] + other_su
+    all_users = [primary_user, self_su] + all_neighbors
 
     history = []
     sim = Simulator(num_bands=1, users=all_users, passes=1)
@@ -137,13 +205,15 @@ def simulate(**kwargs):
         sim.step()
         history.append(
             {
-                "pu_measurements": [self_su.reported_value]
-                + [s.reported_value for s in other_su],
+                "self_measurement": self_su.reported_value,
+                "neighbor_measurements": [s.reported_value for s in all_neighbors],
                 "pu_present": primary_user.current_band is not None,
             }
         )
 
     return history
 
+
 if __name__ == "__main__":
-    simulate()
+    result = simulate(time_steps=100, time_in_range=(5, 10), time_out_range=(1, 5))
+    print(result)
