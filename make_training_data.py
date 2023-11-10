@@ -9,9 +9,9 @@ This is the format that the machine learning model will follow:
 """
 data_format = [{"pu_measurements": [0, 0, 0, 0, 0], "pu_present": True}]
 
+from ast import arg, parse
 from cogsim import Simulator, BaseUser
 from cogsim.spatial import User2D
-from networkx import all_neighbors
 import numpy as np
 
 # rich's print function displays data structures a lot nicer, so if we can
@@ -117,27 +117,6 @@ class SecondaryUser(User2D):
             else:
                 self.reported_value = NOISE_FLOOR
 
-    """
-    Runs a simulation.
-
-    Arguments:
-    :param time_steps: An integer number of time steps to run the simulation
-    for.
-
-    :param time_in_range: A 2-tuple containing the minimum and maximum number
-      of time steps that the primary user will transmit for at a time.
-
-    :param time_out_range: A 2-tuple containing the minimum and maximum number
-      of time steps taht the primary user will not transmit for at a time.
-
-    :param num_users: An integer number of secondary users, including the "self"
-      user, who will be listening for the primary user in the simulation.
-
-    :param space_size: A 2-tuple containing the width and height (in that order)
-      of the space that the primary user and secondary users may occupy, in
-      kilometers.
-    """
-
 
 def simulate(
     time_steps: int = 10,
@@ -215,5 +194,52 @@ def simulate(
 
 
 if __name__ == "__main__":
-    result = simulate(time_steps=100, time_in_range=(5, 10), time_out_range=(1, 5))
-    print(result)
+    import argparse
+    from json import dump
+    from time import time
+
+    parser = argparse.ArgumentParser(
+        prog="CognitiveRadioSimulator",
+        description="Generates data sets for cooperative spectrum sensing readings",
+    )
+
+    parser.add_argument("-o", "--output")
+    parser.add_argument("-d", "--duration", type=int, default=100)
+    parser.add_argument("-g", "--good-neighbors", type=int, default=30)
+    parser.add_argument("-m", "--mal-neighbors", type=int, default=5)
+
+    parser.add_argument("--min-pu-on", type=int, default=5)
+    parser.add_argument("--max-pu-on", type=int, default=10)
+    parser.add_argument("--min-pu-off", type=int, default=1)
+    parser.add_argument("--max-pu-off", type=int, default=5)
+
+    parser.add_argument("--width", type=float, default=1000)
+    parser.add_argument("--height", type=float, default=1000)
+
+    args = parser.parse_args()
+    result = simulate(
+        time_steps=args.duration,
+        time_in_range=(args.min_pu_on, args.max_pu_on),
+        time_out_range=(args.min_pu_off, args.max_pu_off),
+        num_good_neighbors=args.good_neighbors,
+        num_mal_neighbors=args.mal_neighbors,
+        dimensions=(args.width, args.height),
+    )
+
+    params = {
+        "duration": args.duration,
+        "pu_in_range": [args.min_pu_on, args.max_pu_on],
+        "pu_out_range": [args.min_pu_off, args.max_pu_off],
+        "num_good_neighbors": args.good_neighbors,
+        "num_mal_neighbors": args.mal_neighbors,
+        "dimensions": [args.width, args.height],
+    }
+
+    full_data = {"params": params, "data": result}
+
+    filename = args.output
+    if filename is None:
+        filename = f"output-{int(time())}.json"
+
+    with open(filename, "w") as f:
+        dump(full_data, f, indent=4)
