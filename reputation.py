@@ -1,6 +1,5 @@
 import numpy as np
 
-
 def reputation(array: np.ndarray, print_verbose=False):
     """Calculates the ReDiSen-style reputation for each value in an array.
 
@@ -33,3 +32,8 @@ def reputation(array: np.ndarray, print_verbose=False):
 
 if __name__ == "__main__":
     reputation(np.array([92, 93, 91, -40, 59, 83]))
+    # from json import load
+    # with open("outfile", "r") as f:
+    #     d = load(f)
+    
+    # reputation(np.array([d["data"][0]["self_measurement"]] + d["data"][0]["neighbor_measurements"]), print_verbose=True)
