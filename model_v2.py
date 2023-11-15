@@ -27,7 +27,7 @@ class PrimaryUserPresenceNetwork(nn.Module):
         )
 
     def forward(self, in_recent_values, in_reputation_history):
-        out = np.zeros(len(self.user_modules))
+        out = torch.zeros(len(self.user_modules))
         for i, module in enumerate(self.user_modules):
             out[i] = module(in_recent_values[i], in_reputation_history[i])
 
@@ -63,14 +63,11 @@ class SingleSecondaryUserModule(nn.Module):
         output, _ = self.lstm(history_input, (hidden, cells))
         
         output: torch.Tensor
-        
+        output = output[-1]  # potential issue: only using last hidden cell? 
         output = output.flatten()
         
         current_reading_input = current_reading_input.unsqueeze(0)
-        print(output, current_reading_input)
-        linear_in = np.concatenate((output, current_reading_input))
-        print(linear_in)
-        
+        linear_in = torch.cat((output, current_reading_input))
         prediction = self.linear(linear_in)
         return prediction
 
