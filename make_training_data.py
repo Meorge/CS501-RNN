@@ -125,6 +125,7 @@ def simulate(
     num_good_neighbors: int = 30,
     num_mal_neighbors: int = 5,
     dimensions: tuple[int, int] = (1000, 1000),
+    mal_attack_probability: float = 1.0,
 ):
     """Runs and returns the results from a simulation of neighbors attempting
     to detect the primary user's absence or presence.
@@ -171,7 +172,7 @@ def simulate(
         for _ in range(num_good_neighbors)
     ]
     mal_neighbors = [
-        SecondaryUser(x=rand_x(), y=rand_y(), attack_probability=1.0)
+        SecondaryUser(x=rand_x(), y=rand_y(), attack_probability=mal_attack_probability)
         for _ in range(num_mal_neighbors)
     ]
     all_neighbors = good_neighbors + mal_neighbors
@@ -216,6 +217,8 @@ if __name__ == "__main__":
     parser.add_argument("--width", type=float, default=1000)
     parser.add_argument("--height", type=float, default=1000)
 
+    parser.add_argument("--mal-attack-probability", type=float, default=1.0)
+
     args = parser.parse_args()
     result = simulate(
         time_steps=args.duration,
@@ -224,6 +227,7 @@ if __name__ == "__main__":
         num_good_neighbors=args.good_neighbors,
         num_mal_neighbors=args.mal_neighbors,
         dimensions=(args.width, args.height),
+        mal_attack_probability=args.mal_attack_probability
     )
 
     params = {
@@ -233,6 +237,7 @@ if __name__ == "__main__":
         "num_good_neighbors": args.good_neighbors,
         "num_mal_neighbors": args.mal_neighbors,
         "dimensions": [args.width, args.height],
+        "mal_attack_probability": args.mal_attack_probability
     }
 
     full_data = {"params": params, "data": result}
