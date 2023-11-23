@@ -1,3 +1,5 @@
+from json import dump
+from time import time
 import torch.nn as nn
 import torch
 import numpy as np
@@ -14,10 +16,11 @@ class PrimaryUserPresenceNetwork(nn.Module):
     def __init__(self, **kwargs):
         super().__init__()
         self.num_neighbors = kwargs["num_neighbors"]
+        self.hidden_size = kwargs["hidden_size"]
 
-        self.self_module = SingleSecondaryUserModule()
+        self.self_module = SingleSecondaryUserModule(hidden_size=self.hidden_size)
         self.user_modules = [
-            SingleSecondaryUserModule() for _ in range(self.num_neighbors)
+            SingleSecondaryUserModule(hidden_size=self.hidden_size) for _ in range(self.num_neighbors)
         ]
 
         self.user_modules.insert(0, self.self_module)
@@ -61,11 +64,11 @@ class SingleSecondaryUserModule(nn.Module):
 
         history_input = history_input.unsqueeze(1)
         output, _ = self.lstm(history_input, (hidden, cells))
-        
+
         output: torch.Tensor
-        output = output[-1]  # potential issue: only using last hidden cell? 
+        output = output[-1]  # potential issue: only using last hidden cell?
         output = output.flatten()
-        
+
         current_reading_input = current_reading_input.unsqueeze(0)
         linear_in = torch.cat((output, current_reading_input))
         prediction = self.linear(linear_in)
@@ -77,72 +80,122 @@ def train(
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
     criterion: nn.modules.loss._Loss,
-    input_most_recent_values: torch.Tensor,
-    input_rep_history_for_users: torch.Tensor,
-    expected_output: torch.Tensor,
+    training_data: list[tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]],
 ):
+    final_epoch_losses = []
     for epoch in range(n_epochs):
-        print(f"EPOCH {epoch + 1}")
-        model.train()
+        last_loss = None
+        epoch_start_time = time()
+        for i, (
+            (input_most_recent_values, input_rep_history_for_users),
+            expected_output,
+        ) in enumerate(training_data):
+            model.train()
 
-        input_most_recent_values = input_most_recent_values.to(device)
-        input_rep_history_for_users = input_rep_history_for_users.to(device)
+            input_most_recent_values = input_most_recent_values.to(device)
+            input_rep_history_for_users = input_rep_history_for_users.to(device)
 
-        expected_output = expected_output.to(device)
+            expected_output = expected_output.to(device)
 
-        output = model(input_most_recent_values, input_rep_history_for_users)
-        print(f"Training desired: {expected_output}, predicted: {output}")
-
-        loss = criterion(output, expected_output)
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        print(f"Loss: {loss.item()}")
-
-        model.eval()
-        with torch.no_grad():
             output = model(input_most_recent_values, input_rep_history_for_users)
 
-        print()  # add a line between epochs
+            loss = criterion(output, expected_output)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            last_loss = loss.item()
+
+        epoch_end_time = time()
+
+        print(
+            f"EPOCH {epoch + 1}/{n_epochs}, Duration = {epoch_end_time - epoch_start_time:.2f}, Loss = {last_loss}"
+        )
+
+        final_epoch_losses.append(last_loss)
+
+    return final_epoch_losses
+
+    # model.eval()
+    # with torch.no_grad():
+    #     output = model(input_most_recent_values, input_rep_history_for_users)
 
 
 def main():
-    from json import load
-    from os.path import join
-    from feature_select import make_features
+    from load_training_data import get_all_training_data
 
-    with open(join("outfile")) as f:
-        raw_data = load(f)["data"]
-        input_most_recent_values, input_rep_history_for_users = make_features(raw_data)
-        expected_output = np.array([1.0 if raw_data[-1]["pu_present"] else 0.0])
+    # Save the time that this training session started at
+    time_string = f"{int(time())}"
 
-    input_most_recent_values = torch.tensor(
-        input_most_recent_values, dtype=torch.float32
-    ).to(device)
-    input_rep_history_for_users = torch.tensor(
-        input_rep_history_for_users, dtype=torch.float32
-    ).to(device)
-    expected_output = torch.tensor(expected_output, dtype=torch.float32).to(device)
+    training_data = [
+        (
+            (
+                torch.tensor(in_most_recent, dtype=torch.float32).to(device),
+                torch.tensor(in_rep_hist, dtype=torch.float32).to(device),
+            ),
+            torch.tensor(out_expected, dtype=torch.float32).to(device),
+        )
+        for ((in_most_recent, in_rep_hist), out_expected) in get_all_training_data()
+    ]
 
-    n_epochs = 100
-    n_hidden = 128
-    learning_rate = 0.005
-    model = PrimaryUserPresenceNetwork(
-        hidden_size=n_hidden, num_neighbors=len(raw_data[0]["neighbor_measurements"])
-    ).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    criterion = nn.MSELoss().to(device)
-    train(
-        n_epochs,
-        model,
-        optimizer,
-        criterion,
-        input_most_recent_values,
-        input_rep_history_for_users,
-        expected_output,
-    )
+    # Breakdown of what this means:
+    # - training_data is a list of pairs of input data and an output.
+    # - training_data[0] is then a single pair of input data and an output,
+    #   in the form ((in_most_recent, in_rep_hist), out_expected).
+    # - training_data[0][0] is the first item in this tuple, which is itself
+    #   a tuple containing the two sets of input data, (in_most_recent, in_rep_hist).
+    # - training_data[0][0][0] is just in_most_recent, which is a tensor
+    #   containing the last 100 values each node has measured.
+    # - len(training_data[0][0][0]) is the length of this tensor, which is the
+    #   total number of nodes in this network (minus the primary user).
+    # - len(training_data[0][0][0]) - 1 is the number of neighbors that this
+    #   node has, since it is not considered a neighbor of itself.
+    n_neighbors = len(training_data[0][0][0]) - 1
+
+    n_epochs = 50
+    n_hidden_options = [8, 16, 32, 64, 128]
+    lr_options = [1e-1, 1e-2, 1e-3, 5e-2, 5e-3]
+
+    for n_hidden in n_hidden_options:
+        for lr in lr_options:
+            print(f"Training with {n_hidden} hidden size and LR {lr}")
+            model = PrimaryUserPresenceNetwork(
+                hidden_size=n_hidden,
+                num_neighbors=n_neighbors,
+            ).to(device)
+            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+            criterion = nn.MSELoss().to(device)
+
+            start_time = time()
+            final_epoch_losses = train(
+                n_epochs,
+                model,
+                optimizer,
+                criterion,
+                training_data,
+            )
+
+            finish_time = time()
+
+            info_string = f"hidden-{n_hidden}-lr-{lr}-time-{time_string}"
+
+            with open(f"losses-{info_string}.json", "w") as f:
+                dump(
+                    {
+                        "meta": {
+                            "n_epochs": n_epochs,
+                            "n_hidden": n_hidden,
+                            "lr": lr,
+                            "n_neighbors": n_neighbors,
+                        },
+                        "time": int(time()),
+                        "duration": finish_time - start_time,
+                        "epoch_losses": final_epoch_losses,
+                    },
+                    f,
+                )
+
+            torch.save(model.state_dict(), f"model-{info_string}.ckpt")
 
 
 if __name__ == "__main__":
