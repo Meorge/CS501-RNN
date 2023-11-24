@@ -112,7 +112,7 @@ def train(
             f"EPOCH {epoch + 1}/{n_epochs}, Duration = {epoch_end_time - epoch_start_time:.2f}, Loss = {last_loss}"
         )
 
-        final_epoch_losses.append(last_loss)
+        final_epoch_losses.append((epoch_end_time - epoch_start_time, last_loss))
 
     return final_epoch_losses
 
