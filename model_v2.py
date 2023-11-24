@@ -179,7 +179,7 @@ def main():
 
             info_string = f"hidden-{n_hidden}-lr-{lr}-time-{time_string}"
 
-            with open(f"losses-{info_string}.json", "w") as f:
+            with open(f"test_results_fixed_power/losses-{info_string}.json", "w") as f:
                 dump(
                     {
                         "meta": {
@@ -195,7 +195,7 @@ def main():
                     f,
                 )
 
-            torch.save(model.state_dict(), f"model-{info_string}.ckpt")
+            torch.save(model.state_dict(), f"test_results_fixed_power/model-{info_string}.ckpt")
 
 
 if __name__ == "__main__":

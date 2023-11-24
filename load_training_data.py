@@ -11,7 +11,7 @@ except ImportError:
     pass
 
 def get_all_training_data() -> list[tuple[tuple, np.ndarray]]:
-    TRAINING_DATA_FOLDER = "training_data_v2"
+    TRAINING_DATA_FOLDER = "training_data_v3"
 
     training_data_files = [
         join(TRAINING_DATA_FOLDER, name)
