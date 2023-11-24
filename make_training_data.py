@@ -61,7 +61,7 @@ class PrimaryUser(User2D):
         self.time_out_range = time_out_range
         self.timer = self.get_new_time_out_of_band()
         self.current_band = None
-        self.transmit_power = 4.0  # watts
+        self.transmit_power = PU_TRANSMIT_POWER
 
     def step(self, current_band_contents: list[BaseUser] | None, pass_index: int):
         if pass_index != 0:
