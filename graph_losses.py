@@ -8,7 +8,11 @@ def make_plot(content):
     meta = content["meta"]
     title = f"Hidden size {meta['n_hidden']} with LR {meta['lr']}"
 
-    epoch_losses = [i[1] for i in content["epoch_losses"]]
+    try:
+        epoch_losses = [i[1] for i in content["epoch_losses"]]
+    except TypeError:
+        epoch_losses = content["epoch_losses"]
+    plt.cla()
     plt.plot(epoch_losses)
     plt.title(title)
     plt.xlabel("Epoch")
