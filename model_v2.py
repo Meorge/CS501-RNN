@@ -16,12 +16,23 @@ except ImportError:
     RED_CODE = "\033[31m"
     CLEAR_CODE = "\033[0m"
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 TRAINING_FOLDER = "training_data_v4"
 TESTING_FOLDER = "testing_data_v4"
 TEST_RESULTS_OUTPUT_FOLDER = "test_results_v4"
 DEBUG_ACCURACY = False
+FORCE_DEVICE = "cpu"
+
+if FORCE_DEVICE is None:
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+else:
+    device = torch.device(FORCE_DEVICE)
+
+print(f'Using device "{device}"')
 
 
 class PrimaryUserPresenceNetwork(nn.Module):
@@ -40,10 +51,10 @@ class PrimaryUserPresenceNetwork(nn.Module):
 
         self.final_linear = nn.Linear(
             in_features=len(self.user_modules), out_features=1
-        )
+        ).to(device)
 
     def forward(self, in_recent_values, in_reputation_history):
-        out = torch.zeros(len(self.user_modules))
+        out = torch.zeros(len(self.user_modules)).to(device)
         for i, module in enumerate(self.user_modules):
             out[i] = module(in_recent_values[i], in_reputation_history[i])
 
@@ -65,11 +76,11 @@ class SingleSecondaryUserModule(nn.Module):
             input_size=1,
             hidden_size=self.hidden_size,
             num_layers=self.num_layers,
-        )
+        ).to(device)
 
         self.linear = nn.Linear(
             in_features=self.hidden_size + 1, out_features=self.out_size
-        )
+        ).to(device)
 
     def forward(self, current_reading_input: torch.Tensor, history_input: torch.Tensor):
         hidden = torch.zeros(self.num_layers, self.hidden_size).to(device)
@@ -179,10 +190,10 @@ def train(
 
                 output = model(input_most_recent_values, input_rep_history_for_users)
 
-                outputs_match = (
-                    output[0] >= 0.5 and expected_output[0] >= 0.5
-                ) or (output[0] < 0.5 and expected_output[0] < 0.5)
-                
+                outputs_match = (output[0] >= 0.5 and expected_output[0] >= 0.5) or (
+                    output[0] < 0.5 and expected_output[0] < 0.5
+                )
+
                 test_correct += 1 if outputs_match else 0
                 test_total += 1
 
