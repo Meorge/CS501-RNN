@@ -108,10 +108,13 @@ def train(
 
             loss = criterion(output, expected_output)
 
-            print("")
-            print("expected output: ", expected_output[0])
-            print("actual output: ", output[0])
 
+            debug_accuracy = True
+
+
+            if debug_accuracy: print("")
+            if debug_accuracy: print("expected output: ", expected_output[0])
+            if debug_accuracy: print("actual output: ", output[0])
 
             #          
             #  Note: A couple different methods of computing the accuracy of the model were considered, 
@@ -129,10 +132,10 @@ def train(
 
 
             if outputs_match:
-                print("\033[32mcorrect\033[0m")
+                if debug_accuracy: print("\033[32mcorrect\033[0m")
                 correct += 1
             else:
-                print("\033[31mwrong\033[0m")
+                if debug_accuracy: print("\033[31mwrong\033[0m")
 
             optimizer.zero_grad()
             loss.backward()
@@ -143,14 +146,14 @@ def train(
 
         epoch_end_time = time()
 
+        accuracy = correct / total
+
         print(
-            f"EPOCH {epoch + 1}/{n_epochs}, Duration = {epoch_end_time - epoch_start_time:.2f}, Loss = {last_loss}"
+            f"EPOCH {epoch + 1}/{n_epochs}, Duration = {epoch_end_time - epoch_start_time:.2f}, Loss = {last_loss}, Accuracy = {accuracy * 100.0:.2f}%"
         )
 
         final_epoch_losses.append((epoch_end_time - epoch_start_time, last_loss))
-        final_epoch_accuracies.append(correct / total);
-
-        print("on this epoch, the model had an accuracy of: ", correct / total)
+        final_epoch_accuracies.append((epoch_end_time - epoch_start_time, accuracy));
 
     return final_epoch_losses, final_epoch_accuracies
 
