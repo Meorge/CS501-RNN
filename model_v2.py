@@ -3,6 +3,7 @@ from time import time
 import torch.nn as nn
 import torch
 import numpy as np
+from math import isclose
 
 try:
     from rich import print
@@ -83,9 +84,15 @@ def train(
     training_data: list[tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]],
 ):
     final_epoch_losses = []
+    final_epoch_accuracies = []
+
     for epoch in range(n_epochs):
         last_loss = None
         epoch_start_time = time()
+
+        correct = 0
+        total = 0
+
         for i, (
             (input_most_recent_values, input_rep_history_for_users),
             expected_output,
@@ -101,10 +108,38 @@ def train(
 
             loss = criterion(output, expected_output)
 
+            print("")
+            print("expected output: ", expected_output[0])
+            print("actual output: ", output[0])
+
+
+            #          
+            #  Note: A couple different methods of computing the accuracy of the model were considered, 
+            #  It should noted the fact that the expected output is always a binary digit (in the set {0, 1})
+            #  and the actual output is more likely to be a floating point value which could be very
+            #  positive, (much greater than 1.0) or very negative (much lower than 0.0). Because of this,
+            #  accuracy methods such as:
+            #
+            #        outputs_match = isclose(output[0], expected_output[0], abs_tol=0.001)       <-- (using 0.001 for example.)
+            #
+            #  will result in an artifically low accuracy from the model, even if it is able to discern
+            #  a dichotomy properly. Thus, the more simplistic threshold check found below, is used for now.
+            #
+            outputs_match = output[0] >= 0.5
+
+
+            if outputs_match:
+                print("\033[32mcorrect\033[0m")
+                correct += 1
+            else:
+                print("\033[31mwrong\033[0m")
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             last_loss = loss.item()
+
+            total += 1
 
         epoch_end_time = time()
 
@@ -113,8 +148,12 @@ def train(
         )
 
         final_epoch_losses.append((epoch_end_time - epoch_start_time, last_loss))
+        final_epoch_accuracies.append(correct / total);
 
-    return final_epoch_losses
+        print("on this epoch, the model had an accuracy of: ", correct / total)
+
+    return final_epoch_losses, final_epoch_accuracies
+
 
     # model.eval()
     # with torch.no_grad():
@@ -167,7 +206,7 @@ def main():
             criterion = nn.MSELoss().to(device)
 
             start_time = time()
-            final_epoch_losses = train(
+            final_epoch_losses, final_epoch_accuracies = train(
                 n_epochs,
                 model,
                 optimizer,
@@ -191,6 +230,22 @@ def main():
                         "time": int(time()),
                         "duration": finish_time - start_time,
                         "epoch_losses": final_epoch_losses,
+                    },
+                    f,
+                )
+
+            with open(f"test_results_fixed_power/accuracies-{info_string}.json", "w") as f:
+                dump(
+                    {
+                        "meta": {
+                            "n_epochs": n_epochs,
+                            "n_hidden": n_hidden,
+                            "lr": lr,
+                            "n_neighbors": n_neighbors,
+                        },
+                        "time": int(time()),
+                        "duration": finish_time - start_time,
+                        "epoch_accuracies": final_epoch_accuracies,
                     },
                     f,
                 )
