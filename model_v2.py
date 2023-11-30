@@ -2,8 +2,6 @@ from json import dump
 from time import time
 import torch.nn as nn
 import torch
-import numpy as np
-from math import isclose
 from os.path import join
 
 try:
@@ -21,8 +19,9 @@ except ImportError:
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 TRAINING_FOLDER = "training_data_v4"
+TESTING_FOLDER = "testing_data_v4"
 TEST_RESULTS_OUTPUT_FOLDER = "test_results_v4"
-DEBUG_ACCURACY = True
+DEBUG_ACCURACY = False
 
 
 class PrimaryUserPresenceNetwork(nn.Module):
@@ -95,6 +94,7 @@ def train(
     optimizer: torch.optim.Optimizer,
     criterion: nn.modules.loss._Loss,
     training_data: list[tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]],
+    testing_data: list[tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]],
 ):
     final_epoch_metrics = []
 
@@ -139,7 +139,9 @@ def train(
             #  will result in an artifically low accuracy from the model, even if it is able to discern
             #  a dichotomy properly. Thus, the more simplistic threshold check found below, is used for now.
             #
-            outputs_match = output[0] >= 0.5
+            outputs_match = (output[0] >= 0.5 and expected_output[0] >= 0.5) or (
+                output[0] < 0.5 and expected_output[0] < 0.5
+            )
 
             if outputs_match:
                 if DEBUG_ACCURACY:
@@ -158,25 +160,48 @@ def train(
 
         epoch_end_time = time()
 
-        accuracy = correct / total
+        train_accuracy = correct / total
+
+        # Run the model on a test dataset in evaluation mode as well, to see
+        # how it performs there
+        model.eval()
+        with torch.no_grad():
+            test_correct = 0
+            test_total = 0
+            for (
+                input_most_recent_values,
+                input_rep_history_for_users,
+            ), expected_output in testing_data:
+                input_most_recent_values = input_most_recent_values.to(device)
+                input_rep_history_for_users = input_rep_history_for_users.to(device)
+
+                expected_output = expected_output.to(device)
+
+                output = model(input_most_recent_values, input_rep_history_for_users)
+
+                outputs_match = (
+                    output[0] >= 0.5 and expected_output[0] >= 0.5
+                ) or (output[0] < 0.5 and expected_output[0] < 0.5)
+                
+                test_correct += 1 if outputs_match else 0
+                test_total += 1
+
+        test_accuracy = test_correct / test_total
 
         print(
-            f"EPOCH {epoch + 1}/{n_epochs}, Duration = {epoch_end_time - epoch_start_time:.2f}, Loss = {last_loss:.4f}, Train Accuracy = {accuracy * 100.0:.2f}%"
+            f"EPOCH {epoch + 1}/{n_epochs}, Duration = {epoch_end_time - epoch_start_time:.2f}, Loss = {last_loss:.4f}, Train Accuracy = {train_accuracy * 100.0:.2f}%, Test Accuracy = {test_accuracy * 100.0:.2f}%"
         )
 
         final_epoch_metrics.append(
             {
                 "duration": epoch_end_time - epoch_start_time,
                 "loss": last_loss,
-                "train_acc": accuracy,
+                "train_acc": train_accuracy,
+                "test_acc": test_accuracy,
             }
         )
 
     return final_epoch_metrics
-
-    # model.eval()
-    # with torch.no_grad():
-    #     output = model(input_most_recent_values, input_rep_history_for_users)
 
 
 def main():
@@ -195,6 +220,19 @@ def main():
         )
         for ((in_most_recent, in_rep_hist), out_expected) in get_all_training_data(
             TRAINING_FOLDER
+        )
+    ]
+
+    testing_data = [
+        (
+            (
+                torch.tensor(in_most_recent, dtype=torch.float32).to(device),
+                torch.tensor(in_rep_hist, dtype=torch.float32).to(device),
+            ),
+            torch.tensor(out_expected, dtype=torch.float32).to(device),
+        )
+        for ((in_most_recent, in_rep_hist), out_expected) in get_all_training_data(
+            TESTING_FOLDER
         )
     ]
 
@@ -228,11 +266,7 @@ def main():
 
             start_time = time()
             final_epoch_metrics = train(
-                n_epochs,
-                model,
-                optimizer,
-                criterion,
-                training_data,
+                n_epochs, model, optimizer, criterion, training_data, testing_data
             )
 
             finish_time = time()
