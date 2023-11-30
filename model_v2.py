@@ -4,13 +4,25 @@ import torch.nn as nn
 import torch
 import numpy as np
 from math import isclose
+from os.path import join
 
 try:
     from rich import print
+
+    GREEN_CODE = "[green]"
+    RED_CODE = "[red]"
+    CLEAR_CODE = ""
 except ImportError:
     print("rich not installed, using builtin print")
+    GREEN_CODE = "\033[32m"
+    RED_CODE = "\033[31m"
+    CLEAR_CODE = "\033[0m"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+TRAINING_FOLDER = "training_data_v4"
+TEST_RESULTS_OUTPUT_FOLDER = "test_results_v4"
+DEBUG_ACCURACY = True
 
 
 class PrimaryUserPresenceNetwork(nn.Module):
@@ -21,7 +33,8 @@ class PrimaryUserPresenceNetwork(nn.Module):
 
         self.self_module = SingleSecondaryUserModule(hidden_size=self.hidden_size)
         self.user_modules = [
-            SingleSecondaryUserModule(hidden_size=self.hidden_size) for _ in range(self.num_neighbors)
+            SingleSecondaryUserModule(hidden_size=self.hidden_size)
+            for _ in range(self.num_neighbors)
         ]
 
         self.user_modules.insert(0, self.self_module)
@@ -83,8 +96,7 @@ def train(
     criterion: nn.modules.loss._Loss,
     training_data: list[tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]],
 ):
-    final_epoch_losses = []
-    final_epoch_accuracies = []
+    final_epoch_metrics = []
 
     for epoch in range(n_epochs):
         last_loss = None
@@ -108,16 +120,15 @@ def train(
 
             loss = criterion(output, expected_output)
 
+            if DEBUG_ACCURACY:
+                print("")
+            if DEBUG_ACCURACY:
+                print("expected output: ", expected_output[0])
+            if DEBUG_ACCURACY:
+                print("actual output: ", output[0])
 
-            debug_accuracy = True
-
-
-            if debug_accuracy: print("")
-            if debug_accuracy: print("expected output: ", expected_output[0])
-            if debug_accuracy: print("actual output: ", output[0])
-
-            #          
-            #  Note: A couple different methods of computing the accuracy of the model were considered, 
+            #
+            #  Note: A couple different methods of computing the accuracy of the model were considered,
             #  It should noted the fact that the expected output is always a binary digit (in the set {0, 1})
             #  and the actual output is more likely to be a floating point value which could be very
             #  positive, (much greater than 1.0) or very negative (much lower than 0.0). Because of this,
@@ -130,12 +141,13 @@ def train(
             #
             outputs_match = output[0] >= 0.5
 
-
             if outputs_match:
-                if debug_accuracy: print("\033[32mcorrect\033[0m")
+                if DEBUG_ACCURACY:
+                    print(f"{GREEN_CODE}Correct{CLEAR_CODE}")
                 correct += 1
             else:
-                if debug_accuracy: print("\033[31mwrong\033[0m")
+                if DEBUG_ACCURACY:
+                    print(f"{RED_CODE}Wrong{CLEAR_CODE}")
 
             optimizer.zero_grad()
             loss.backward()
@@ -149,14 +161,18 @@ def train(
         accuracy = correct / total
 
         print(
-            f"EPOCH {epoch + 1}/{n_epochs}, Duration = {epoch_end_time - epoch_start_time:.2f}, Loss = {last_loss}, Accuracy = {accuracy * 100.0:.2f}%"
+            f"EPOCH {epoch + 1}/{n_epochs}, Duration = {epoch_end_time - epoch_start_time:.2f}, Loss = {last_loss:.4f}, Train Accuracy = {accuracy * 100.0:.2f}%"
         )
 
-        final_epoch_losses.append((epoch_end_time - epoch_start_time, last_loss))
-        final_epoch_accuracies.append((epoch_end_time - epoch_start_time, accuracy));
+        final_epoch_metrics.append(
+            {
+                "duration": epoch_end_time - epoch_start_time,
+                "loss": last_loss,
+                "train_acc": accuracy,
+            }
+        )
 
-    return final_epoch_losses, final_epoch_accuracies
-
+    return final_epoch_metrics
 
     # model.eval()
     # with torch.no_grad():
@@ -177,7 +193,9 @@ def main():
             ),
             torch.tensor(out_expected, dtype=torch.float32).to(device),
         )
-        for ((in_most_recent, in_rep_hist), out_expected) in get_all_training_data()
+        for ((in_most_recent, in_rep_hist), out_expected) in get_all_training_data(
+            TRAINING_FOLDER
+        )
     ]
 
     # Breakdown of what this means:
@@ -209,7 +227,7 @@ def main():
             criterion = nn.MSELoss().to(device)
 
             start_time = time()
-            final_epoch_losses, final_epoch_accuracies = train(
+            final_epoch_metrics = train(
                 n_epochs,
                 model,
                 optimizer,
@@ -221,7 +239,9 @@ def main():
 
             info_string = f"hidden-{n_hidden}-lr-{lr}-time-{time_string}"
 
-            with open(f"test_results_fixed_power/losses-{info_string}.json", "w") as f:
+            with open(
+                join(TEST_RESULTS_OUTPUT_FOLDER, f"metrics-{info_string}.json"), "w"
+            ) as f:
                 dump(
                     {
                         "meta": {
@@ -232,28 +252,15 @@ def main():
                         },
                         "time": int(time()),
                         "duration": finish_time - start_time,
-                        "epoch_losses": final_epoch_losses,
+                        "epoch_metrics": final_epoch_metrics,
                     },
                     f,
                 )
 
-            with open(f"test_results_fixed_power/accuracies-{info_string}.json", "w") as f:
-                dump(
-                    {
-                        "meta": {
-                            "n_epochs": n_epochs,
-                            "n_hidden": n_hidden,
-                            "lr": lr,
-                            "n_neighbors": n_neighbors,
-                        },
-                        "time": int(time()),
-                        "duration": finish_time - start_time,
-                        "epoch_accuracies": final_epoch_accuracies,
-                    },
-                    f,
-                )
-
-            torch.save(model.state_dict(), f"test_results_fixed_power/model-{info_string}.ckpt")
+            torch.save(
+                model.state_dict(),
+                join(TEST_RESULTS_OUTPUT_FOLDER, f"model-{info_string}.ckpt"),
+            )
 
 
 if __name__ == "__main__":
