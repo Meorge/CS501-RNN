@@ -158,9 +158,14 @@ def simulate(
     rand_x = lambda: rng.uniform(high=dimensions[0])
     rand_y = lambda: rng.uniform(high=dimensions[1])
 
+    # "The primary user is placed 5km away from the center of the secondary
+    # user network", according to the ReDiSen paper. The dimensions are
+    # measured in meters, so we move the PU to the midpoint of the network
+    # (dividing both width and height by 2) then move it 5000m (5km) to the
+    # right.
     primary_user = PrimaryUser(
-        x=rand_x(),
-        y=rand_y(),
+        x=(dimensions[0] / 2.0) + 5000,
+        y=(dimensions[1] / 2.0),
         time_in_range=time_in_range,
         time_out_range=time_out_range,
     )
