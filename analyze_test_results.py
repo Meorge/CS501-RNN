@@ -41,6 +41,8 @@ for fn in training_data_files:
             "avg_loss": avg_loss,
             "avg_train_acc": avg_train_acc,
             "avg_test_acc": avg_test_acc,
+            "max_train_acc": np.max(train_accs),
+            "max_test_acc": np.max(test_accs),
             "last_loss": losses[-1],
             "last_train_acc": train_accs[-1],
             "last_test_acc": test_accs[-1],
@@ -74,31 +76,52 @@ add_score("last_test_acc")
 # Highest scores first
 tests.sort(key=lambda i: i["score"], reverse=True)
 
-table = Table()
-table.add_column("HS")
-table.add_column("LR")
-table.add_column("Score")
-table.add_column("Avg Duration")
-table.add_column("Avg Loss")
-table.add_column("Final Loss")
-table.add_column("Avg Train Acc")
-table.add_column("Final Train Acc")
-table.add_column("Avg Test Acc")
-table.add_column("Final Test Acc")
+cols = [
+    "HS",
+    "LR",
+    "Score",
+    "Avg Duration",
+    "Avg Loss",
+    "Final Loss",
+    "Avg Train Acc",
+    # "Max Train Acc",
+    "Final Train Acc",
+    "Avg Test Acc",
+    # "Max Test Acc",
+    "Final Test Acc",
+]
 
-for test in tests:
-    table.add_row(
+table = Table(*cols)
+
+test_strs = [
+    [
         f"{test['n_hidden']}",
         f"{test['lr']:.3f}",
         f"{test['score']}",
         f"{test['avg_duration']:.3f}",
         f"{test['avg_loss']:.5f}",
         f"{test['last_loss']:.5f}",
-        f"{test['avg_train_acc']:.3f}",
-        f"{test['last_train_acc']:.3f}",
-        f"{test['avg_test_acc']:.3f}",
-        f"{test['last_test_acc']:.3f}",
-    )
+        f"{test['avg_train_acc']:.2f}",
+        # f"{test['max_train_acc']:.2f}",
+        f"{test['last_train_acc']:.2f}",
+        f"{test['avg_test_acc']:.2f}",
+        # f"{test['max_test_acc']:.2f}",
+        f"{test['last_test_acc']:.2f}",
+    ]
+    for test in tests
+]
+
+for test in test_strs:
+    table.add_row(*test)
+    
+# console.print(table)
 
 
+# LaTeX table
+header = ' & '.join(cols) + r' \\'
+body = ""
+for row in test_strs:
+    body += ' & '.join(row) + r' \\' +'\n\hline\n'
+
+table = header + '\n\hline\n' + body
 console.print(table)
